@@ -88,9 +88,26 @@ Scraping claude.ai cookies to replay API calls is against Anthropic's
 Usage Policy and will get accounts banned. This extension never does
 that — it only observes streams the user themselves initiated.
 
+## Optional: Live2D character
+
+The default character is inline SVG (zero assets, zero setup). If you want
+a full Live2D Cubism 4 rig with breathing, blinks, and mouth-sync tied to
+streaming tokens:
+
+1. Fetch the three vendor libraries into `vendor/` (see `vendor/README.md`).
+2. Drop a Cubism 4 model into `assets/live2d/<folder>/` (Hiyori from the free
+   SDK samples is the easiest start — see `assets/live2d/README.md`).
+3. In the extension popup, switch **Character engine** to **Live2D** and
+   point **Model folder** at your model's `.model3.json`.
+4. Reload the extension and refresh claude.ai.
+
+If anything goes wrong (missing vendor files, bad model path, Pixi crash),
+the overlay silently falls back to the SVG character — you'll never see a
+broken extension.
+
 ## Roadmap
 
-- [ ] Live2D rig for the character (currently inline SVG with CSS keyframes)
+- [x] Live2D rig for the character
 - [ ] Prompt library (slash commands injected into the composer)
 - [ ] Export conversation to Markdown
 - [ ] Keyboard shortcuts (`⌘/Ctrl+K` command palette)
@@ -104,6 +121,3 @@ that — it only observes streams the user themselves initiated.
 MIT — do whatever you want with this, just don't claim it as official
 Anthropic software.
 
----
-
-Co-Authored-By: Claude Opus 4.7
