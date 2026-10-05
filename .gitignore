@@ -6,3 +6,13 @@ dist/
 .vscode/
 .idea/
 *.zip
+
+# Third-party runtimes — fetched locally per vendor/README.md.
+# Pixi + pixi-live2d-display are MIT so they could be checked in, but Live2D
+# Cubism Core is proprietary and must not be. Keep the whole folder out of
+# git to avoid mixing licensed and un-licensed blobs.
+vendor/*.js
+
+# Live2D models (artist IP). Users supply their own.
+assets/live2d/*/
+!assets/live2d/README.md
