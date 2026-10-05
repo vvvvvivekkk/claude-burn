@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <title>Claude Burn</title>
+  <style>
+    html, body { margin: 0; padding: 0; background: #0f0f14; color: #f2f2f6; font: 13px/1.4 ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+    body { width: 280px; padding: 14px 16px; }
+    h1 { font-size: 14px; margin: 0 0 10px; letter-spacing: .02em; }
+    .row { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-top: 1px solid rgba(255,255,255,0.06); }
+    .row:first-of-type { border-top: none; }
+    label { user-select: none; }
+    input[type="checkbox"] { accent-color: #ff7a3d; width: 16px; height: 16px; }
+    .num { font-variant-numeric: tabular-nums; opacity: .85; }
+    .foot { margin-top: 14px; opacity: .55; font-size: 11px; text-align: center; }
+    a { color: #ff9f6b; text-decoration: none; }
+    button { background: #22222a; color: #f2f2f6; border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+    button:hover { background: #2c2c36; }
+  </style>
+</head>
+<body>
+  <h1>🔥 Claude Burn</h1>
+  <div class="row"><label for="chr">Character overlay</label><input id="chr" type="checkbox" checked/></div>
+  <div class="row"><label for="run">Runner bar</label><input id="run" type="checkbox" checked/></div>
+  <div class="row"><span>Session tokens (est.)</span><span class="num" id="total">—</span></div>
+  <div class="row"><span>Requests</span><span class="num" id="reqs">—</span></div>
+  <div class="row"><span>Errors</span><span class="num" id="errs">—</span></div>
+  <div class="row"><label>Reset stats</label><button id="reset">Reset</button></div>
+  <div class="foot">Only runs on <a href="https://claude.ai" target="_blank">claude.ai</a>. No data leaves your browser.</div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

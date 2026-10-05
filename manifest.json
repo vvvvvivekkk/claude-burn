@@ -1,0 +1,42 @@
+{
+  "manifest_version": 3,
+  "name": "Claude Burn",
+  "version": "0.1.0",
+  "description": "A character that reacts to Claude as it thinks — token-burn visuals, Colab-style runner, and a motion-rich overlay for claude.ai.",
+  "icons": {
+    "16":  "icons/icon16.png",
+    "32":  "icons/icon32.png",
+    "48":  "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_title": "Claude Burn — settings",
+    "default_popup": "src/options/popup.html"
+  },
+  "background": {
+    "service_worker": "src/background/sw.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://claude.ai/*"],
+      "js": ["src/content/bridge.js"],
+      "css": ["src/overlay/overlay.css"],
+      "run_at": "document_start",
+      "all_frames": false
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "src/injected/fetch-tap.js",
+        "src/overlay/overlay.js",
+        "assets/sprites/*.svg",
+        "assets/sprites/*.png"
+      ],
+      "matches": ["https://claude.ai/*"]
+    }
+  ],
+  "permissions": ["storage"],
+  "host_permissions": ["https://claude.ai/*"]
+}

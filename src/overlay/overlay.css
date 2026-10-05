@@ -1,0 +1,8 @@
+/* Content-script-level stylesheet.
+ * Intentionally empty: every visible style lives inside the shadow root
+ * built by overlay.js, so nothing can bleed into claude.ai's own CSS and
+ * nothing from claude.ai's Tailwind reaches our overlay. This file exists
+ * so the manifest has a place to inject global tweaks later (e.g. hiding
+ * a native element to make room for the runner), without reshuffling MV3
+ * declarations.
+ */
