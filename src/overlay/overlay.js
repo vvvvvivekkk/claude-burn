@@ -1,9 +1,11 @@
 // overlay.js — runs in the page world. Builds a shadow-DOM overlay with:
 //   1. Colab-style runner bar at the bottom (elapsed, tokens, tok/s, shimmer)
-//   2. Floating character on the right side that reacts to stream events
+//   2. Floating character on the right side that reacts to stream events,
+//      swappable between SVG (default, zero assets) and Live2D (if the user
+//      has dropped a model into assets/live2d/)
 //
 // We own ONE host <div> on <body>, attach a shadow root, and never leak styles.
-// All data comes from window.postMessage events of {__cb: true, type: 'stream-event' | 'tally' | 'settings'}.
+// All data comes from window.postMessage events of {__cb: true, type: ...}.
 
 (() => {
   if (window.__claudeBurnOverlay) return;
@@ -15,17 +17,21 @@
     startedAt: 0,
     chars: 0,
     deltas: 0,
-    tokensPerSec: 0,
-    lastDeltaAt: 0,
-    lastCharCount: 0,
+    lastDeltaChars: 0,
     model: "",
-    settings: { characterEnabled: true, runnerEnabled: true, side: "right" },
+    settings: {
+      characterEnabled: true,
+      runnerEnabled: true,
+      characterEngine: "svg",  // "svg" | "live2d"
+      live2dModel: "Hiyori/Hiyori.model3.json",
+    },
     tally: { totalChars: 0, totalRequests: 0, sessionStart: Date.now() },
-    mood: "idle", // idle | start | burn | tool | done | error
+    mood: "idle",
+    engine: null,  // the active character engine instance
   };
 
   // ---- shadow root ---------------------------------------------------------
-  const mount = () => {
+  const mount = async () => {
     if (document.getElementById("claude-burn-host")) return;
     const host = document.createElement("div");
     host.id = "claude-burn-host";
@@ -35,12 +41,41 @@
     const root = host.attachShadow({ mode: "open" });
     root.innerHTML = TEMPLATE;
     wire(root);
+    await mountCharacter(root);
     tickLoop();
   };
 
   // run as soon as body is there — on claude.ai that's instant after DCL
   if (document.body) mount();
   else document.addEventListener("DOMContentLoaded", mount, { once: true });
+
+  // ---- character engine mount ---------------------------------------------
+  const mountCharacter = async (root) => {
+    const slot = root.querySelector(".char-slot");
+    if (!slot) return;
+
+    // Lazy import, picked by setting
+    const { makeCharacterEngine } = await import(chrome.runtime.getURL("src/overlay/character.js"));
+    const kind = state.settings.characterEngine === "live2d" ? "live2d" : "svg";
+
+    try {
+      const engine = await makeCharacterEngine(kind, state.settings);
+      const node = await engine.mount(slot);
+      if (!node && kind === "live2d") {
+        // Live2D failed → fall back to SVG transparently
+        const svg = await makeCharacterEngine("svg", state.settings);
+        await svg.mount(slot);
+        state.engine = svg;
+      } else {
+        state.engine = engine;
+      }
+    } catch (err) {
+      console.warn("[claude-burn] character mount failed, falling back to SVG", err);
+      const svg = await makeCharacterEngine("svg", state.settings);
+      await svg.mount(slot);
+      state.engine = svg;
+    }
+  };
 
   // ---- template ------------------------------------------------------------
   const TEMPLATE = /* html */ `
@@ -108,19 +143,24 @@
     @keyframes pulse { 0%,100%{transform:scale(1);} 50%{transform:scale(1.25);} }
     @keyframes slide { 0%{transform:translateX(-100%);} 100%{transform:translateX(275%);} }
 
-    /* ===== Character ===== */
-    .char {
+    /* ===== Character slot — engine owns everything inside ===== */
+    .char-slot {
       position: fixed; right: 24px; bottom: 110px;
       width: 160px; height: 180px;
-      pointer-events: auto; cursor: grab;
+      pointer-events: auto;
       user-select: none;
-      transform-origin: 50% 90%;
+    }
+    .char-slot.hidden { display: none; }
+
+    /* Shared character styles that the SVG engine's elements use */
+    .char-slot .char {
+      position: relative; width: 100%; height: 100%;
+      cursor: grab; transform-origin: 50% 90%;
       animation: breathe 3.6s ease-in-out infinite;
     }
-    .char.hidden { display: none; }
-    .char svg { width: 100%; height: 100%; display: block; }
+    .char-slot .char svg { width: 100%; height: 100%; display: block; }
+    .char-slot .char-canvas { width: 100%; height: 100%; display: block; }
 
-    /* mood-driven motion layered on top of breathe */
     .char.mood-start { animation: perk .5s cubic-bezier(.25,1.4,.4,1) 1, breathe 3.2s ease-in-out infinite .5s; }
     .char.mood-burn  { animation: burn 0.9s ease-in-out infinite; }
     .char.mood-tool  { animation: tilt 1.4s ease-in-out infinite; }
@@ -132,7 +172,6 @@
     @keyframes tilt    { 0%,100%{transform:rotate(-6deg);} 50%{transform:rotate(6deg);} }
     @keyframes bob     { 0%{transform:translateY(0);} 40%{transform:translateY(-10px);} 100%{transform:translateY(0);} }
 
-    /* Flame — overlaid on the character's hand */
     .flame {
       position: absolute; left: 10px; bottom: 46px;
       width: 36px; height: 56px; opacity: 0; transition: opacity .25s;
@@ -143,7 +182,6 @@
     .flame-inner { width: 100%; height: 100%; animation: flicker .18s ease-in-out infinite alternate; }
     @keyframes flicker { from{transform:scaleY(1) scaleX(1);} to{transform:scaleY(1.1) scaleX(.9);} }
 
-    /* Token counter floating above character */
     .burn-meter {
       position: absolute; top: -6px; left: 50%; transform: translateX(-50%);
       padding: 3px 8px; border-radius: 999px;
@@ -155,7 +193,6 @@
     }
     .char.mood-burn .burn-meter, .char.mood-tool .burn-meter { opacity: 1; }
 
-    /* Session total — a tiny ambient ticker in the corner */
     .ticker {
       position: fixed; right: 16px; top: 16px;
       padding: 6px 10px; border-radius: 999px;
@@ -169,7 +206,7 @@
     .ticker b { color: #ff9f6b; font-weight: 600; }
   </style>
 
-  <div class="runner idle" part="runner">
+  <div class="runner idle">
     <div class="dot"></div>
     <div class="meta">
       <span><span class="label">t</span> <b class="elapsed">0.0s</b></span>
@@ -183,91 +220,42 @@
 
   <div class="ticker"><b class="total">0</b> tokens burned this session</div>
 
-  <div class="char" part="char">
-    <!-- Simple vector character — swap for sprite/Lottie later -->
-    <svg viewBox="0 0 160 180" xmlns="http://www.w3.org/2000/svg">
-      <defs>
-        <radialGradient id="hair" cx="50%" cy="30%" r="60%">
-          <stop offset="0" stop-color="#ffb260"/>
-          <stop offset="1" stop-color="#c7560f"/>
-        </radialGradient>
-        <linearGradient id="body" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stop-color="#2b2140"/>
-          <stop offset="1" stop-color="#140a24"/>
-        </linearGradient>
-      </defs>
-      <!-- body / cloak -->
-      <path d="M30 170 Q30 110 55 90 L105 90 Q130 110 130 170 Z" fill="url(#body)"/>
-      <!-- arms -->
-      <path d="M55 110 Q35 125 32 150" stroke="#1a1130" stroke-width="10" fill="none" stroke-linecap="round"/>
-      <path d="M105 110 Q125 125 128 150" stroke="#1a1130" stroke-width="10" fill="none" stroke-linecap="round"/>
-      <!-- head -->
-      <circle cx="80" cy="62" r="34" fill="#fbe3c6"/>
-      <!-- hair -->
-      <path d="M46 55 Q50 20 80 20 Q110 20 114 55 Q110 42 95 40 Q90 32 80 32 Q70 32 65 40 Q50 42 46 55 Z" fill="url(#hair)"/>
-      <!-- eyes -->
-      <g class="eyes">
-        <ellipse class="eye-l" cx="68" cy="66" rx="3.6" ry="5"/>
-        <ellipse class="eye-r" cx="92" cy="66" rx="3.6" ry="5"/>
-      </g>
-      <!-- mouth -->
-      <path class="mouth" d="M72 80 Q80 86 88 80" stroke="#5a2a12" stroke-width="2" fill="none" stroke-linecap="round"/>
-    </svg>
-    <div class="flame">
-      <svg class="flame-inner" viewBox="0 0 36 56" xmlns="http://www.w3.org/2000/svg">
-        <defs>
-          <radialGradient id="fl" cx="50%" cy="80%" r="70%">
-            <stop offset="0" stop-color="#fff6c0"/>
-            <stop offset=".4" stop-color="#ffb84a"/>
-            <stop offset=".8" stop-color="#ff4a1a"/>
-            <stop offset="1" stop-color="rgba(255,74,26,0)"/>
-          </radialGradient>
-        </defs>
-        <path d="M18 2 Q6 20 10 36 Q12 50 18 54 Q24 50 26 36 Q30 20 18 2 Z" fill="url(#fl)"/>
-      </svg>
-    </div>
-    <div class="burn-meter"><span class="bm-tps">0</span> tok/s · <span class="bm-chars">0</span></div>
-  </div>
+  <div class="char-slot"></div>
   `;
 
   // ---- wiring --------------------------------------------------------------
-  let runnerEl, dotEl, elapsedEl, tokensEl, tpsEl, charEl, totalEl, bmTpsEl, bmCharsEl;
+  let runnerEl, elapsedEl, tokensEl, tpsEl, slotEl, totalEl;
 
   const wire = (root) => {
     runnerEl  = root.querySelector(".runner");
     elapsedEl = root.querySelector(".elapsed");
     tokensEl  = root.querySelector(".tokens");
     tpsEl     = root.querySelector(".tps");
-    charEl    = root.querySelector(".char");
+    slotEl    = root.querySelector(".char-slot");
     totalEl   = root.querySelector(".total");
-    bmTpsEl   = root.querySelector(".bm-tps");
-    bmCharsEl = root.querySelector(".bm-chars");
 
-    // dragging — simple pointer drag for the character
+    // dragging — simple pointer drag for the character slot
     let dragging = false, dx = 0, dy = 0;
-    charEl.addEventListener("pointerdown", (e) => {
-      dragging = true; dx = e.clientX - charEl.offsetLeft; dy = e.clientY - charEl.offsetTop;
-      charEl.setPointerCapture(e.pointerId); charEl.style.cursor = "grabbing";
+    slotEl.addEventListener("pointerdown", (e) => {
+      dragging = true; dx = e.clientX - slotEl.offsetLeft; dy = e.clientY - slotEl.offsetTop;
+      slotEl.setPointerCapture(e.pointerId);
     });
-    charEl.addEventListener("pointermove", (e) => {
+    slotEl.addEventListener("pointermove", (e) => {
       if (!dragging) return;
       const x = e.clientX - dx, y = e.clientY - dy;
-      charEl.style.left = x + "px"; charEl.style.top = y + "px";
-      charEl.style.right = "auto"; charEl.style.bottom = "auto";
+      slotEl.style.left = x + "px"; slotEl.style.top = y + "px";
+      slotEl.style.right = "auto"; slotEl.style.bottom = "auto";
     });
-    charEl.addEventListener("pointerup", (e) => {
-      dragging = false; charEl.style.cursor = "grab";
-      // persist last position in storage via the bridge
+    slotEl.addEventListener("pointerup", () => {
+      dragging = false;
       window.postMessage({ __cb: true, type: "set-setting", key: "charPos",
-        value: { left: charEl.style.left, top: charEl.style.top } }, "*");
+        value: { left: slotEl.style.left, top: slotEl.style.top } }, "*");
     });
   };
 
   const setMood = (mood) => {
     state.mood = mood;
-    if (!charEl) return;
-    charEl.className = "char mood-" + mood;
-    if (!state.settings.characterEnabled) charEl.classList.add("hidden");
+    state.engine?.setMood(mood);
     runnerEl.className = "runner " + (mood === "idle" ? "idle"
       : mood === "done" ? "done"
       : mood === "error" ? "error"
@@ -282,11 +270,11 @@
 
     if (d.type === "settings") {
       state.settings = Object.assign(state.settings, d.settings || {});
-      if (charEl) charEl.classList.toggle("hidden", !state.settings.characterEnabled);
-      if (state.settings.charPos && charEl) {
-        charEl.style.left = state.settings.charPos.left || "";
-        charEl.style.top  = state.settings.charPos.top  || "";
-        if (state.settings.charPos.left) { charEl.style.right = "auto"; charEl.style.bottom = "auto"; }
+      if (slotEl) slotEl.classList.toggle("hidden", !state.settings.characterEnabled);
+      if (state.settings.charPos && slotEl) {
+        slotEl.style.left = state.settings.charPos.left || "";
+        slotEl.style.top  = state.settings.charPos.top  || "";
+        if (state.settings.charPos.left) { slotEl.style.right = "auto"; slotEl.style.bottom = "auto"; }
       }
     }
 
@@ -303,16 +291,14 @@
     if (name === "stream_open") {
       state.streaming = true;
       state.startedAt = performance.now();
-      state.chars = 0; state.deltas = 0; state.lastCharCount = 0; state.lastDeltaAt = state.startedAt;
+      state.chars = 0; state.deltas = 0; state.lastDeltaChars = 0;
       setMood("start");
-      // after a moment, flip into burn mode (first delta usually arrives fast)
       setTimeout(() => { if (state.streaming) setMood("burn"); }, 350);
       return;
     }
     if (name === "stream_close") {
       state.streaming = false;
       setMood("done");
-      // after 2.5s, go back to idle
       setTimeout(() => { if (!state.streaming) setMood("idle"); }, 2500);
       return;
     }
@@ -323,25 +309,27 @@
       return;
     }
 
-    // mid-stream events
     const d = e.data || {};
-    // Anthropic SSE emits: message_start, content_block_start, content_block_delta,
-    // content_block_stop, message_delta, message_stop, ping. Tool use shows up as
-    // content_block_start with a `tool_use` block.
     if (d && d.type === "content_block_start" && d.content_block && d.content_block.type === "tool_use") {
       setMood("tool");
     } else if (d && d.type === "content_block_stop" && state.mood === "tool") {
       setMood("burn");
     }
 
-    // deltas carry text — our tap already counts chars in e.charCount
     if (typeof e.charCount === "number") state.chars = e.charCount;
     if (typeof e.deltas === "number") state.deltas = e.deltas;
+
+    // feed the character engine with the per-delta pulse
+    const dChars = state.chars - state.lastDeltaChars;
+    state.lastDeltaChars = state.chars;
+    const elapsed = Math.max(0.001, (performance.now() - state.startedAt) / 1000);
+    const tps = Math.round((state.chars / 4) / elapsed);
+    state.engine?.onDelta({ tps, chars: state.chars, deltaChars: dChars });
   };
 
-  // ---- 60fps-ish render loop (requestAnimationFrame, throttled) ------------
+  // ---- 15Hz render loop ----------------------------------------------------
   let lastRender = 0;
-  const RENDER_HZ = 15; // 15 updates/sec is plenty for text numbers
+  const RENDER_HZ = 15;
   const tickLoop = () => {
     const now = performance.now();
     if (now - lastRender >= 1000 / RENDER_HZ) {
@@ -355,14 +343,11 @@
     if (!elapsedEl) return;
     if (state.streaming) {
       const elapsed = (now - state.startedAt) / 1000;
-      // rough tok estimate: chars/4
       const tokEst = Math.round(state.chars / 4);
       const tps = elapsed > 0 ? Math.round(tokEst / elapsed) : 0;
       elapsedEl.textContent = elapsed.toFixed(1) + "s";
       tokensEl.textContent  = fmt(tokEst);
       tpsEl.textContent     = String(tps);
-      if (bmTpsEl)   bmTpsEl.textContent   = String(tps);
-      if (bmCharsEl) bmCharsEl.textContent = fmt(state.chars) + " ch";
     }
   };
 
