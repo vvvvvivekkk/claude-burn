@@ -16,12 +16,26 @@
     a { color: #ff9f6b; text-decoration: none; }
     button { background: #22222a; color: #f2f2f6; border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; padding: 4px 10px; cursor: pointer; }
     button:hover { background: #2c2c36; }
+    select { background: #1a1a22; color: #f2f2f6; border: 1px solid rgba(255,255,255,0.1); border-radius: 4px; padding: 2px 6px; font-size: 11px; }
+    .l2d-only { display: none; }
+    .l2d-only.on { display: flex; }
   </style>
 </head>
 <body>
   <h1>🔥 Claude Burn</h1>
   <div class="row"><label for="chr">Character overlay</label><input id="chr" type="checkbox" checked/></div>
   <div class="row"><label for="run">Runner bar</label><input id="run" type="checkbox" checked/></div>
+  <div class="row">
+    <label for="eng">Character engine</label>
+    <select id="eng">
+      <option value="svg">SVG (default)</option>
+      <option value="live2d">Live2D</option>
+    </select>
+  </div>
+  <div class="row l2d-only">
+    <label for="model">Model folder</label>
+    <input id="model" type="text" style="width:140px;background:#1a1a22;color:#f2f2f6;border:1px solid rgba(255,255,255,0.1);border-radius:4px;padding:3px 6px;font-size:11px;" placeholder="Hiyori/Hiyori.model3.json"/>
+  </div>
   <div class="row"><span>Session tokens (est.)</span><span class="num" id="total">—</span></div>
   <div class="row"><span>Requests</span><span class="num" id="reqs">—</span></div>
   <div class="row"><span>Errors</span><span class="num" id="errs">—</span></div>
