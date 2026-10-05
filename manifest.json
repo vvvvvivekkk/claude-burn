@@ -31,6 +31,13 @@
       "resources": [
         "src/injected/fetch-tap.js",
         "src/overlay/overlay.js",
+        "src/overlay/character.js",
+        "src/overlay/engines/svg-engine.js",
+        "src/overlay/engines/live2d-engine.js",
+        "vendor/pixi.min.js",
+        "vendor/pixi-live2d-display-cubism4.min.js",
+        "vendor/live2dcubismcore.min.js",
+        "assets/live2d/*",
         "assets/sprites/*.svg",
         "assets/sprites/*.png"
       ],

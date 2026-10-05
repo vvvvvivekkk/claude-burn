@@ -25,7 +25,24 @@
   // fetch-tap first — it needs to wrap window.fetch before claude.ai's app
   // code caches a reference to it. overlay.js can come right after.
   injectScript("src/injected/fetch-tap.js");
-  injectScript("src/overlay/overlay.js");
+
+  // Live2D vendor libs — load *before* overlay.js so that by the time the
+  // overlay asks for the engine, PIXI / PIXI.live2d / Live2DCubismCore are
+  // already globals on window. We only inject them if the user turned Live2D
+  // on; otherwise the SVG engine is used and the extra ~570 KB is skipped.
+  //
+  // Each file is loaded via web_accessible_resources, so the page world's
+  // CSP is fine with it (chrome-extension:// origin is trusted by MV3).
+  chrome.storage.local.get(["characterEngine"], (o) => {
+    if (o.characterEngine === "live2d") {
+      // Order matters: live2dcubismcore must exist before pixi-live2d-display
+      // tries to register the Cubism 4 model factory.
+      injectScript("vendor/live2dcubismcore.min.js");
+      injectScript("vendor/pixi.min.js");
+      injectScript("vendor/pixi-live2d-display-cubism4.min.js");
+    }
+    injectScript("src/overlay/overlay.js");
+  });
 
   // --- 2. relay settings from chrome.storage into the page world -------------
   // The page world has no access to chrome.*, so the content script is the
